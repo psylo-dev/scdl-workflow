@@ -1,0 +1,61 @@
+name: SoundCloud Sync
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # Täglich um 2 Uhr
+  workflow_dispatch: # Ermöglicht manuelles Ausführen
+
+jobs:
+  sync-songs:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Checkout des Repositories
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    # Installation von Python und scdl
+    - name: Install scdl
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3 python3-pip
+        pip install scdl
+
+    # SoundCloud Songs synchronisieren
+    - name: Sync Songs
+      env:
+        SCDL_CLIENT_ID: ${{ secrets.SCDL_CLIENT_ID }} # SoundCloud Client-ID
+      run: |
+        mkdir -p songs
+        scdl -l "<SoundCloud-Playlist-URL-oder-User-URL>" --path songs --sync
+
+    # Prüfen, ob Änderungen existieren
+    - name: Check for changes
+      run: |
+        if [ -z "$(git status --porcelain)" ]; then
+          echo "Keine neuen Songs. Beende Workflow."
+          exit 0
+        fi
+
+    # Änderungen committen und pushen, neue Lieder auflisten
+    - name: Commit and Push Changes
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Liste der neuen Dateien extrahieren
+        NEW_FILES=$(git status --porcelain | grep "^A " | awk '{print $2}')
+        
+        if [ -z "$NEW_FILES" ]; then
+          echo "Keine neuen Songs. Beende Workflow."
+          exit 0
+        fi
+
+        # Commit-Message erstellen mit neuen Liedern
+        COMMIT_MESSAGE="Sync neue Lieder von SoundCloud:\n\n$(echo "$NEW_FILES" | sed 's/^/- /')"
+
+        git add songs/
+        git commit -m "$COMMIT_MESSAGE"
+        git push origin HEAD:main
