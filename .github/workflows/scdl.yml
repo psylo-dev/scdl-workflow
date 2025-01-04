@@ -10,26 +10,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # Checkout des Repositories
+    # 1. Repository klonen
     - name: Checkout Repository
       uses: actions/checkout@v3
 
-    # Installation von Python und scdl
+    # 2. Installiere Python und scdl
     - name: Install scdl
       run: |
         sudo apt-get update
         sudo apt-get install -y python3 python3-pip
         pip install scdl
 
-    # SoundCloud Songs synchronisieren
+    # 3. SoundCloud-Songs synchronisieren
     - name: Sync Songs
-      env:
-        SCDL_CLIENT_ID: ${{ secrets.SCDL_CLIENT_ID }} # SoundCloud Client-ID
       run: |
         mkdir -p songs
-        scdl -l "<SoundCloud-Playlist-URL-oder-User-URL>" --path songs --sync
+        scdl -l "https://soundcloud.com/psylobrain/sets/psyauto" --path songs --sync
 
-    # Prüfen, ob Änderungen existieren
+    # 4. Prüfen, ob Änderungen existieren
     - name: Check for changes
       run: |
         if [ -z "$(git status --porcelain)" ]; then
@@ -37,25 +35,31 @@ jobs:
           exit 0
         fi
 
-    # Änderungen committen und pushen, neue Lieder auflisten
+    # 5. Neue Lieder auflisten und in Nebenspeicher.txt speichern
+    - name: List new songs and save to file
+      run: |
+        NEW_FILES=$(git status --porcelain | grep "^A " | awk '{print $2}')
+        
+        if [ -z "$NEW_FILES" ]; then
+          echo "Keine neuen Songs zum Auflisten."
+          exit 0
+        fi
+
+        # Erstelle eine Liste der neuen Lieder
+        echo "Neue Lieder von SoundCloud:" > Nebenspeicher/neue_lieder.txt
+        echo "$NEW_FILES" | sed 's/^/- /' >> Nebenspeicher/neue_lieder.txt
+
+    # 6. Änderungen committen und pushen
     - name: Commit and Push Changes
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.TOKEN }}
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-        # Liste der neuen Dateien extrahieren
-        NEW_FILES=$(git status --porcelain | grep "^A " | awk '{print $2}')
-        
-        if [ -z "$NEW_FILES" ]; then
-          echo "Keine neuen Songs. Beende Workflow."
-          exit 0
-        fi
-
         # Commit-Message erstellen mit neuen Liedern
         COMMIT_MESSAGE="Sync neue Lieder von SoundCloud:\n\n$(echo "$NEW_FILES" | sed 's/^/- /')"
 
-        git add songs/
+        git add songs/ Nebenspeicher/neue_lieder.txt
         git commit -m "$COMMIT_MESSAGE"
         git push origin HEAD:main
