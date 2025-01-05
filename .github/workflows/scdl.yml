@@ -1,9 +1,69 @@
 name: SoundCloud Sync
 
 on:
-  schedule:
-    - cron: "0 2 * * *" # Täglich um 2 Uhr
-  workflow_dispatch: # Ermöglicht manuelles Ausführen
+  workflow_dispatch:
+    inputs:
+      # Eingabefelder für benutzerdefinierte Parameter
+      sc_url:
+        description: 'SoundCloud Playlist oder Benutzer URL'
+        required: true
+        default: 'https://soundcloud.com/psylobrain/sets/psyauto'
+        
+      maxtracks:
+        description: 'Anzahl der letzten Tracks (0 für alle)'
+        required: false
+        default: '10'
+        
+      download_archive:
+        description: 'Archiv-Datei für den Download-Verlauf'
+        required: false
+        default: 'scdl_downloads.txt'
+
+      download_path:
+        description: 'Pfad zum Speichern der Dateien'
+        required: false
+        default: 'songs'
+
+      # Checkboxen für zusätzliche Optionen
+      sync:
+        description: 'Nur neue/aktualisierte Tracks herunterladen (Synchronisation)'
+        required: false
+        default: true
+        type: boolean
+
+      onlymp3:
+        description: 'Nur MP3-Dateien herunterladen'
+        required: false
+        default: true
+        type: boolean
+
+      max_size:
+        description: 'Maximale Trackgröße (z.B. 100m für 100 MB)'
+        required: false
+        default: '100m'
+
+      name_format:
+        description: 'Dateinamen-Format (Standard: Künstler - Titel)'
+        required: false
+        default: '%artist% - %title%'
+
+      force_metadata:
+        description: 'Metadaten auch bei bereits heruntergeladenen Dateien setzen'
+        required: false
+        default: false
+        type: boolean
+
+      add_timestamp:
+        description: 'Timestamp zum Dateinamen hinzufügen'
+        required: false
+        default: false
+        type: boolean
+
+      convert_flac:
+        description: 'FLAC-Dateien nach MP3 konvertieren'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   sync-songs:
@@ -14,20 +74,57 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v3
 
-    # 2. Installiere Python und scdl
-    - name: Install scdl
+    # 2. Installiere Python, ffmpeg und scdl
+    - name: Install Dependencies (Python, ffmpeg, scdl)
       run: |
         sudo apt-get update
-        sudo apt-get install -y python3 python3-pip
+        sudo apt-get install -y python3 python3-pip ffmpeg
         pip install scdl
 
-    # 3. SoundCloud-Songs synchronisieren
+    # 3. Setze anpassbare Variablen für scdl-Optionen
+    - name: Set variables for scdl options
+      run: |
+        export SC_URL="${{ github.event.inputs.sc_url }}"
+        export SC_MAXTRACKS="${{ github.event.inputs.maxtracks }}"
+        export SC_DOWNLOAD_ARCHIVE="${{ github.event.inputs.download_archive }}"
+        export SC_DOWNLOAD_PATH="${{ github.event.inputs.download_path }}"
+        export SC_ADDITIONAL_OPTIONS=""
+        
+        if [[ "${{ github.event.inputs.sync }}" == "true" ]]; then
+          SC_ADDITIONAL_OPTIONS="$SC_ADDITIONAL_OPTIONS --sync"
+        fi
+        
+        if [[ "${{ github.event.inputs.onlymp3 }}" == "true" ]]; then
+          SC_ADDITIONAL_OPTIONS="$SC_ADDITIONAL_OPTIONS --onlymp3"
+        fi
+
+        if [[ -n "${{ github.event.inputs.max_size }}" ]]; then
+          SC_ADDITIONAL_OPTIONS="$SC_ADDITIONAL_OPTIONS --max-size ${{ github.event.inputs.max_size }}"
+        fi
+
+        if [[ -n "${{ github.event.inputs.name_format }}" ]]; then
+          SC_ADDITIONAL_OPTIONS="$SC_ADDITIONAL_OPTIONS --name-format ${{ github.event.inputs.name_format }}"
+        fi
+
+        if [[ "${{ github.event.inputs.force_metadata }}" == "true" ]]; then
+          SC_ADDITIONAL_OPTIONS="$SC_ADDITIONAL_OPTIONS --force-metadata"
+        fi
+
+        if [[ "${{ github.event.inputs.add_timestamp }}" == "true" ]]; then
+          SC_ADDITIONAL_OPTIONS="$SC_ADDITIONAL_OPTIONS --addtimestamp"
+        fi
+
+        if [[ "${{ github.event.inputs.convert_flac }}" == "true" ]]; then
+          SC_ADDITIONAL_OPTIONS="$SC_ADDITIONAL_OPTIONS --flac"
+        fi
+
+    # 4. SoundCloud-Songs synchronisieren
     - name: Sync Songs
       run: |
-        mkdir -p songs
-        scdl -l "https://soundcloud.com/psylobrain/sets/psyauto" --path songs --sync
+        mkdir -p $SC_DOWNLOAD_PATH
+        scdl -l "$SC_URL" $SC_ADDITIONAL_OPTIONS
 
-    # 4. Prüfen, ob Änderungen existieren
+    # 5. Prüfen, ob Änderungen existieren
     - name: Check for changes
       run: |
         if [ -z "$(git status --porcelain)" ]; then
@@ -35,7 +132,7 @@ jobs:
           exit 0
         fi
 
-    # 5. Neue Lieder auflisten und in Nebenspeicher.txt speichern
+    # 6. Neue Lieder auflisten und in Nebenspeicher.txt speichern
     - name: List new songs and save to file
       run: |
         NEW_FILES=$(git status --porcelain | grep "^A " | awk '{print $2}')
@@ -49,7 +146,7 @@ jobs:
         echo "Neue Lieder von SoundCloud:" > Nebenspeicher/neue_lieder.txt
         echo "$NEW_FILES" | sed 's/^/- /' >> Nebenspeicher/neue_lieder.txt
 
-    # 6. Änderungen committen und pushen
+    # 7. Änderungen committen und pushen
     - name: Commit and Push Changes
       env:
         GITHUB_TOKEN: ${{ secrets.TOKEN }}
