@@ -154,7 +154,7 @@ jobs:
           commit_message="Added downloaded tracks:\n\n$(echo "$downloaded_tracks" | sed 's/^/- /')"
           git commit -m "$commit_message"
           git push
-        else
+        else:
           echo "No new tracks to commit."
 
     # Upload Logs on Failure
