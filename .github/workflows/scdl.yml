@@ -124,7 +124,7 @@ jobs:
           eval "${{ env.scdl_command }}"
 
       # 8. `archive.txt` aktualisieren und commiten
-      - name: `archive.txt` aktualisieren und commiten
+      - name: archive aktualisieren und commiten
         run: |
           # Git-Konfiguration
           git config user.name "${{ github.actor }}"
@@ -132,11 +132,3 @@ jobs:
           git add "${{ env.sync_file }}"
           git commit -m "Aktualisiere archive.txt mit neuen heruntergeladenen Tracks"
           git push
-
-      # 9. Logs hochladen, falls Fehler auftritt
-      - name: Logs hochladen
-        if: failure()
-        uses: actions/upload-artifact@v3
-        with:
-          name: scdl-logs
-          path: ./logs/
