@@ -70,7 +70,6 @@ jobs:
         id: define_paths
         run: |
           SYNC_FILE="${GITHUB_WORKSPACE}/archive.txt"
-
           # Wenn kein benutzerdefinierter Pfad angegeben ist, standardmäßig im "downloads"-Ordner des Repos
           if [ -z "${{ github.event.inputs.custom_download_path }}" ]; then
             DOWNLOAD_PATH="${GITHUB_WORKSPACE}/downloads"
@@ -78,25 +77,21 @@ jobs:
             # Wenn ein benutzerdefinierter Pfad angegeben wird, innerhalb des Downloads-Ordners
             DOWNLOAD_PATH="${GITHUB_WORKSPACE}/downloads/${{ github.event.inputs.custom_download_path }}"
           fi
-
           # Sicherstellen, dass die Ordner existieren, sonst erstellen
           mkdir -p "$DOWNLOAD_PATH"
           mkdir -p "$(dirname "$SYNC_FILE")"
           [ -f "$SYNC_FILE" ] || touch "$SYNC_FILE"
-
-          echo "::set-output name=download_path::$DOWNLOAD_PATH"
-          echo "::set-output name=sync_file::$SYNC_FILE"
-
+          echo "download_path=$DOWNLOAD_PATH" >> $GITHUB_ENV
+          echo "sync_file=$SYNC_FILE" >> $GITHUB_ENV
+          
       # 6. SCDL-Befehl vorbereiten
       - name: SCDL-Befehl vorbereiten
         id: prepare_scdl_command
         run: |
           scdl_command="scdl"
-
           if [[ -n "${{ github.event.inputs.url }}" ]]; then
             scdl_command+=" -l '${{ github.event.inputs.url }}'"
           fi
-
           if [[ "${{ github.event.inputs.download_uploads }}" == "true" ]]; then
             scdl_command+=" -t"
           fi
@@ -110,7 +105,7 @@ jobs:
             scdl_command+=" -c"
           fi
           if [[ "${{ github.event.inputs.sync }}" == "true" ]]; then
-            scdl_command+=" --sync '${{ steps.define_paths.outputs.sync_file }}'"
+            scdl_command+=" --sync '${{ env.sync_file }}'"
           fi
           if [[ "${{ github.event.inputs.metadata }}" == "true" ]]; then
             scdl_command+=" --force-metadata"
@@ -118,23 +113,30 @@ jobs:
           if [[ "${{ github.event.inputs.overwrite }}" == "true" ]]; then
             scdl_command+=" --overwrite"
           fi
-
-          scdl_command+=" --download-archive '${{ steps.define_paths.outputs.sync_file }}' --path '${{ steps.define_paths.outputs.download_path }}' --hide-progress"
-
-          echo "::set-output name=scdl_command::$scdl_command"
+          scdl_command+=" --download-archive '${{ env.sync_file }}' --path '${{ env.download_path }}' --hide-progress"
+          echo "scdl_command=$scdl_command" >> $GITHUB_ENV
 
       # 7. SCDL-Befehl ausführen
       - name: SCDL ausführen
         run: |
           echo "SCDL-Befehl wird ausgeführt:"
-          echo "${{ steps.prepare_scdl_command.outputs.scdl_command }}"
-          eval "${{ steps.prepare_scdl_command.outputs.scdl_command }}"
+          echo "${{ env.scdl_command }}"
+          eval "${{ env.scdl_command }}"
 
-      # 8. Änderungen commiten und pushen
-      - name: Änderungen commiten und pushen
-        uses: stefanzweifel/git-auto-commit-action@v4
+      # 8. `archive.txt` aktualisieren und commiten
+      - name: `archive.txt` aktualisieren und commiten
+        run: |
+          # Git-Konfiguration
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+          git add "${{ env.sync_file }}"
+          git commit -m "Aktualisiere archive.txt mit neuen heruntergeladenen Tracks"
+          git push
+
+      # 9. Logs hochladen, falls Fehler auftritt
+      - name: Logs hochladen
+        if: failure()
+        uses: actions/upload-artifact@v3
         with:
-          commit_message: 'Neue Tracks hinzugefügt:'
-          file_pattern: './downloads/*'
-          branch: ${{ github.ref }}
-          token: ${{ secrets.TOKEN }}
+          name: scdl-logs
+          path: ./logs/
