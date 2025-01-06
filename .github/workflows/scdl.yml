@@ -69,17 +69,20 @@ jobs:
     - name: Install SCDL
       run: pip install git+https://github.com/scdl-org/scdl.git
 
-    # Define Paths
-    - name: Define Paths
+    # Define Default Paths Using GitHub Workspace
+    - name: Define Default Paths
       id: define_paths
       run: |
-        # Fixed paths
-        DOWNLOAD_PATH="./downloads"
-        SYNC_FILE="./sync/archive.txt"
+        # Use default paths in the repository
+        DOWNLOAD_PATH="${GITHUB_WORKSPACE}/downloads"
+        SYNC_FILE="${GITHUB_WORKSPACE}/sync/archive.txt"
 
         # Ensure directories exist
         mkdir -p "$DOWNLOAD_PATH"
         mkdir -p "$(dirname "$SYNC_FILE")"
+
+        # Initialize the sync file if it doesn't exist
+        [ -f "$SYNC_FILE" ] || touch "$SYNC_FILE"
 
         echo "::set-output name=download_path::$DOWNLOAD_PATH"
         echo "::set-output name=sync_file::$SYNC_FILE"
@@ -124,7 +127,7 @@ jobs:
           scdl_command+=" --overwrite"
         fi
 
-        # Add fixed download path
+        # Add default download path
         scdl_command+=" --path '${{ steps.define_paths.outputs.download_path }}'"
 
         echo "::set-output name=scdl_command::$scdl_command"
@@ -134,6 +137,8 @@ jobs:
       run: |
         echo "Running SCDL command:"
         echo "${{ steps.prepare_scdl_command.outputs.scdl_command }}"
+
+        # Execute the command safely
         eval "${{ steps.prepare_scdl_command.outputs.scdl_command }}"
 
     # Add Downloaded Files to Repository
@@ -143,6 +148,7 @@ jobs:
         git config user.name "${{ github.actor }}"
         git config user.email "${{ github.actor }}@users.noreply.github.com"
         git add .
+        
         downloaded_tracks=$(ls -1)
         if [ -n "$downloaded_tracks" ]; then
           commit_message="Added downloaded tracks:\n\n$(echo "$downloaded_tracks" | sed 's/^/- /')"
