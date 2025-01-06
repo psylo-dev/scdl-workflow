@@ -84,8 +84,8 @@ jobs:
         mkdir -p "$(dirname "$SYNC_FILE")"
         [ -f "$SYNC_FILE" ] || touch "$SYNC_FILE"
 
-        echo "::set-output name=download_path::$DOWNLOAD_PATH"
-        echo "::set-output name=sync_file::$SYNC_FILE"
+        echo "download_path=$DOWNLOAD_PATH" >> $GITHUB_ENV
+        echo "sync_file=$SYNC_FILE" >> $GITHUB_ENV
 
     # 6. SCDL-Befehl vorbereiten
     - name: SCDL-Befehl vorbereiten
@@ -110,7 +110,7 @@ jobs:
           scdl_command+=" -c"
         fi
         if [[ "${{ github.event.inputs.sync }}" == "true" ]]; then
-          scdl_command+=" --sync '${{ steps.define_paths.outputs.sync_file }}'"
+          scdl_command+=" --sync '${{ env.sync_file }}'"
         fi
         if [[ "${{ github.event.inputs.metadata }}" == "true" ]]; then
           scdl_command+=" --force-metadata"
@@ -119,38 +119,39 @@ jobs:
           scdl_command+=" --overwrite"
         fi
 
-        scdl_command+=" --download-archive '${{ steps.define_paths.outputs.sync_file }}' --path '${{ steps.define_paths.outputs.download_path }}' --hide-progress"
+        scdl_command+=" --download-archive '${{ env.sync_file }}' --path '${{ env.download_path }}' --hide-progress"
 
-        echo "::set-output name=scdl_command::$scdl_command"
+        echo "scdl_command=$scdl_command" >> $GITHUB_ENV
 
     # 7. SCDL-Befehl ausführen
     - name: SCDL ausführen
       run: |
         echo "SCDL-Befehl wird ausgeführt:"
-        echo "${{ steps.prepare_scdl_command.outputs.scdl_command }}"
-        eval "${{ steps.prepare_scdl_command.outputs.scdl_command }}"
+        echo "${{ env.scdl_command }}"
+        eval "${{ env.scdl_command }}"
 
-    # 8. Commiten und pushen
-    - name: Lade änderung in repository
+    # 8. Änderungen commiten und pushen
+    - name: Änderungen commiten und pushen
       run: |
-        cd "${{ steps.define_paths.outputs.download_path }}"
+        cd "${{ env.download_path }}"
+        
+        # Git-Konfiguration
         git config user.name "${{ github.actor }}"
-        git config user.email "davenplay@gmail.com"
+        git config user.email "${{ github.actor }}@users.noreply.github.com"
+        
+        # Push mit dem Secret "TOKEN"
+        git remote set-url origin https://github.com/${{ github.repository }}.git
+
+        # Dateien zum Commit hinzufügen
         git add .
         downloaded_tracks=$(ls -1)
-        
+
         if [ -n "$downloaded_tracks" ]; then
           commit_message="Neue Tracks hinzugefügt:\n\n$(echo "$downloaded_tracks" | sed 's/^/- /')"
           git commit -m "$commit_message"
-          git push
+
+          # Push mit dem "TOKEN"-Secret
+          git push https://x-access-token:${{ secrets.TOKEN }}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
         else
           echo "Keine neuen Tracks zum Committen."
         fi
-
-    # 9. Logs hochladen, falls Fehler auftritt
-    - name: Logs hochladen
-      if: failure()
-      uses: actions/upload-artifact@v3
-      with:
-        name: scdl-logs
-        path: ./logs/
