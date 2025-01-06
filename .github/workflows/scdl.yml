@@ -36,7 +36,7 @@ on:
         required: false
         default: 'false'
       custom_download_path:
-        description: 'Optional: Benutzerdefinierter Download-Pfad (Standard: Repo Workspace)'
+        description: 'Optional: Benutzerdefinierter Download-Pfad (Standard: repo workspace/downloads)'
         required: false
         default: ''
 
@@ -71,10 +71,12 @@ jobs:
         run: |
           SYNC_FILE="${GITHUB_WORKSPACE}/archive.txt"
 
+          # Wenn kein benutzerdefinierter Pfad angegeben ist, standardmäßig im "downloads"-Ordner des Repos
           if [ -z "${{ github.event.inputs.custom_download_path }}" ]; then
             DOWNLOAD_PATH="${GITHUB_WORKSPACE}/downloads"
           else
-            DOWNLOAD_PATH="${{ github.event.inputs.custom_download_path }}"
+            # Wenn ein benutzerdefinierter Pfad angegeben wird, innerhalb des Downloads-Ordners
+            DOWNLOAD_PATH="${GITHUB_WORKSPACE}/downloads/${{ github.event.inputs.custom_download_path }}"
           fi
 
           # Sicherstellen, dass die Ordner existieren, sonst erstellen
@@ -130,31 +132,9 @@ jobs:
 
       # 8. Änderungen commiten und pushen
       - name: Änderungen commiten und pushen
-        run: |
-          cd "${{ steps.define_paths.outputs.download_path }}"
-
-          # Git-Konfiguration für den Commit
-          git config user.name "${{ github.actor }}"
-          git config user.email "${{ github.actor }}@users.noreply.github.com"
-
-          # Dateien zum Commit hinzufügen
-          git add .
-          downloaded_tracks=$(ls -1)
-
-          if [ -n "$downloaded_tracks" ]; then
-            commit_message="Neue Tracks hinzugefügt:\n\n$(echo "$downloaded_tracks" | sed 's/^/- /')"
-            git commit -m "$commit_message"
-
-            # Push über GitHub-Token
-            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
-          else
-            echo "Keine neuen Tracks zum Committen."
-          fi
-
-      # 9. Logs hochladen, falls Fehler auftritt
-      - name: Logs hochladen
-        if: failure()
-        uses: actions/upload-artifact@v3
+        uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          name: scdl-logs
-          path: ./logs/
+          commit_message: 'Neue Tracks hinzugefügt:'
+          file_pattern: './downloads/*'
+          branch: ${{ github.ref }}
+          token: ${{ secrets.TOKEN }}
