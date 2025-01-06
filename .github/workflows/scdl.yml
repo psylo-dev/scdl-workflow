@@ -130,28 +130,24 @@ jobs:
         echo "${{ env.scdl_command }}"
         eval "${{ env.scdl_command }}"
 
-    # 8. Änderungen commiten und pushen
     - name: Änderungen commiten und pushen
-      run: |
-        cd "${{ env.download_path }}"
-        
-        # Git-Konfiguration
-        git config user.name "${{ github.actor }}"
-        git config user.email "${{ github.actor }}@users.noreply.github.com"
-        
-        # Push mit dem Secret "TOKEN"
-        git remote set-url origin https://github.com/${{ github.repository }}.git
+  run: |
+    cd "${{ env.download_path }}"
 
-        # Dateien zum Commit hinzufügen
-        git add .
-        downloaded_tracks=$(ls -1)
+    # Git-Konfiguration für den Commit
+    git config user.name "${{ github.actor }}"
+    git config user.email "${{ github.actor }}@users.noreply.github.com"
 
-        if [ -n "$downloaded_tracks" ]; then
-          commit_message="Neue Tracks hinzugefügt:\n\n$(echo "$downloaded_tracks" | sed 's/^/- /')"
-          git commit -m "$commit_message"
+    # Dateien zum Commit hinzufügen
+    git add .
+    downloaded_tracks=$(ls -1)
 
-          # Push mit dem "TOKEN"-Secret
-          git push https://x-access-token:${{ secrets.TOKEN }}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
-        else
-          echo "Keine neuen Tracks zum Committen."
-        fi
+    if [ -n "$downloaded_tracks" ]; then
+      commit_message="Neue Tracks hinzugefügt:\n\n$(echo "$downloaded_tracks" | sed 's/^/- /')"
+      git commit -m "$commit_message"
+
+      # Push über GitHub-Token
+      git push https://x-access-token:${{ secrets.TOKEN }}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
+    else
+      echo "Keine neuen Tracks zum Committen."
+    fi
