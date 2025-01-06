@@ -43,6 +43,14 @@ on:
         description: 'Overwrite existing files'
         required: false
         default: 'false'
+      metadata:
+        description: 'Force metadata setting on already downloaded tracks'
+        required: false
+        default: 'false'
+      hide_progress:
+        description: 'Hide download progress bar'
+        required: false
+        default: 'true'
 
 jobs:
   download_and_commit:
@@ -120,15 +128,21 @@ jobs:
         if [[ "${{ github.event.inputs.sync }}" == "true" ]]; then
           scdl_command+=" --sync '${{ steps.define_paths.outputs.sync_file }}'"
         fi
+        if [[ "${{ github.event.inputs.metadata }}" == "true" ]]; then
+          scdl_command+=" --force-metadata"
+        fi
         if [[ "${{ github.event.inputs.flac }}" == "true" ]]; then
           scdl_command+=" --flac"
         fi
         if [[ "${{ github.event.inputs.overwrite }}" == "true" ]]; then
           scdl_command+=" --overwrite"
         fi
+        if [[ "${{ github.event.inputs.hide_progress }}" == "true" ]]; then
+          scdl_command+=" --hide-progress"
+        fi
 
-        # Add default download path
-        scdl_command+=" --path '${{ steps.define_paths.outputs.download_path }}'"
+        # Always add the download archive and path options
+        scdl_command+=" --download-archive '${{ steps.define_paths.outputs.sync_file }}' --path '${{ steps.define_paths.outputs.download_path }}'"
 
         echo "::set-output name=scdl_command::$scdl_command"
 
@@ -137,24 +151,26 @@ jobs:
       run: |
         echo "Running SCDL command:"
         echo "${{ steps.prepare_scdl_command.outputs.scdl_command }}"
-
-        # Execute the command safely
         eval "${{ steps.prepare_scdl_command.outputs.scdl_command }}"
 
-    # Add Downloaded Files to Repository
+    # Commit and Push Changes using Git commands
     - name: Commit and Push Changes
       run: |
         cd "${{ steps.define_paths.outputs.download_path }}"
+        
+        # Setup Git config
         git config user.name "${{ github.actor }}"
         git config user.email "${{ github.actor }}@users.noreply.github.com"
-        git add .
         
+        # Stage and commit the downloaded tracks
+        git add .
         downloaded_tracks=$(ls -1)
+        
         if [ -n "$downloaded_tracks" ]; then
-          commit_message="Added downloaded tracks:\n\n$(echo "$downloaded_tracks" | sed 's/^/- /')"
+          commit_message="Added newly downloaded tracks to archive\n\n$(echo "$downloaded_tracks" | sed 's/^/- /')"
           git commit -m "$commit_message"
           git push
-        else:
+        else
           echo "No new tracks to commit."
 
     # Upload Logs on Failure
