@@ -1,115 +1,102 @@
-name: SCDL
+name: SoundCloud Download & Sync (SCDL)
 
 on:
   workflow_dispatch:
     inputs:
       url:
-        description: 'SoundCloud URL (track/playlist/user)'
+        description: 'SoundCloud URL (Track/Playlist/User)'
         required: true
         default: 'https://soundcloud.com/psylobrain/sets/psyauto'
-      download_all:
-        description: 'Download all tracks of a user (including reposts)'
-        required: false
-        default: 'false'
       download_uploads:
-        description: 'Download all uploads of a user (no reposts)'
+        description: 'Lade alle Uploads eines Nutzers herunter (keine Reposts)'
         required: false
         default: 'false'
       download_favorites:
-        description: 'Download all favorites (likes) of a user'
+        description: 'Lade alle Favoriten (Likes) eines Nutzers herunter'
         required: false
         default: 'false'
       download_playlists:
-        description: 'Download all playlists of a user'
-        required: false
-        default: 'false'
-      download_reposts:
-        description: 'Download all reposts of a user'
+        description: 'Lade alle Playlists eines Nutzers herunter'
         required: false
         default: 'false'
       continue_download:
-        description: 'Continue if a file already exists'
+        description: 'Setze fort, wenn eine Datei bereits existiert'
         required: false
         default: 'false'
       sync:
-        description: 'Use sync function with an archive file'
+        description: 'Verwende Sync-Funktion mit Archivdatei'
         required: false
         default: 'true'
-      flac:
-        description: 'Convert original files to FLAC'
-        required: false
-        default: 'false'
       overwrite:
-        description: 'Overwrite existing files'
+        description: 'Überschreibe existierende Dateien'
         required: false
         default: 'false'
       metadata:
-        description: 'Force metadata setting on already downloaded tracks'
+        description: 'Erzwinge Metadaten auf bereits heruntergeladenen Tracks'
         required: false
         default: 'false'
-      hide_progress:
-        description: 'Hide download progress bar'
+      custom_download_path:
+        description: 'Optional: Benutzerdefinierter Download-Pfad (Standard: Repo Workspace)'
         required: false
-        default: 'true'
+        default: ''
 
 jobs:
   download_and_commit:
     runs-on: ubuntu-latest
 
     steps:
-    # Repository Checkout
-    - name: Checkout Repository
+    # 1. Repository auschecken
+    - name: Repository auschecken
       uses: actions/checkout@v3
 
-    # Install Python and Pip
-    - name: Set up Python
+    # 2. Python installieren
+    - name: Python einrichten
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
 
-    # Install FFmpeg
-    - name: Install FFmpeg
+    # 3. FFmpeg installieren
+    - name: FFmpeg installieren
       run: |
         sudo apt-get update
         sudo apt-get install -y ffmpeg
 
-    # Install SCDL
-    - name: Install SCDL
+    # 4. SCDL installieren
+    - name: SCDL installieren
       run: pip install git+https://github.com/scdl-org/scdl.git
 
-    # Define Default Paths Using GitHub Workspace
-    - name: Define Default Paths
+    # 5. Standardpfade festlegen
+    - name: Standardpfade festlegen
       id: define_paths
       run: |
-        # Use default paths in the repository
-        DOWNLOAD_PATH="${GITHUB_WORKSPACE}/downloads"
-        SYNC_FILE="${GITHUB_WORKSPACE}/sync/archive.txt"
+        # Definiere den Pfad für die Archivdatei immer im Hauptverzeichnis der Repo
+        SYNC_FILE="${GITHUB_WORKSPACE}/archive.txt"
 
-        # Ensure directories exist
+        # Benutzerdefinierten Download-Pfad prüfen, ansonsten Standardpfad setzen
+        if [ -z "${{ github.event.inputs.custom_download_path }}" ]; then
+          DOWNLOAD_PATH="${GITHUB_WORKSPACE}/downloads"
+        else
+          DOWNLOAD_PATH="${{ github.event.inputs.custom_download_path }}"
+        fi
+
+        # Sicherstellen, dass die Ordner existieren, sonst erstellen
         mkdir -p "$DOWNLOAD_PATH"
         mkdir -p "$(dirname "$SYNC_FILE")"
-
-        # Initialize the sync file if it doesn't exist
         [ -f "$SYNC_FILE" ] || touch "$SYNC_FILE"
 
         echo "::set-output name=download_path::$DOWNLOAD_PATH"
         echo "::set-output name=sync_file::$SYNC_FILE"
 
-    # Prepare SCDL Command
-    - name: Prepare SCDL Command
+    # 6. SCDL-Befehl vorbereiten
+    - name: SCDL-Befehl vorbereiten
       id: prepare_scdl_command
       run: |
         scdl_command="scdl"
 
-        # Add the URL
         if [[ -n "${{ github.event.inputs.url }}" ]]; then
           scdl_command+=" -l '${{ github.event.inputs.url }}'"
         fi
 
-        # Add options
-        if [[ "${{ github.event.inputs.download_all }}" == "true" ]]; then
-          scdl_command+=" -a"
-        fi
         if [[ "${{ github.event.inputs.download_uploads }}" == "true" ]]; then
           scdl_command+=" -t"
         fi
@@ -118,9 +105,6 @@ jobs:
         fi
         if [[ "${{ github.event.inputs.download_playlists }}" == "true" ]]; then
           scdl_command+=" -p"
-        fi
-        if [[ "${{ github.event.inputs.download_reposts }}" == "true" ]]; then
-          scdl_command+=" -r"
         fi
         if [[ "${{ github.event.inputs.continue_download }}" == "true" ]]; then
           scdl_command+=" -c"
@@ -131,50 +115,40 @@ jobs:
         if [[ "${{ github.event.inputs.metadata }}" == "true" ]]; then
           scdl_command+=" --force-metadata"
         fi
-        if [[ "${{ github.event.inputs.flac }}" == "true" ]]; then
-          scdl_command+=" --flac"
-        fi
         if [[ "${{ github.event.inputs.overwrite }}" == "true" ]]; then
           scdl_command+=" --overwrite"
         fi
-        if [[ "${{ github.event.inputs.hide_progress }}" == "true" ]]; then
-          scdl_command+=" --hide-progress"
-        fi
 
-        # Always add the download archive and path options
-        scdl_command+=" --download-archive '${{ steps.define_paths.outputs.sync_file }}' --path '${{ steps.define_paths.outputs.download_path }}'"
+        scdl_command+=" --download-archive '${{ steps.define_paths.outputs.sync_file }}' --path '${{ steps.define_paths.outputs.download_path }}' --hide-progress"
 
         echo "::set-output name=scdl_command::$scdl_command"
 
-    # Run SCDL Command
-    - name: Run SCDL
+    # 7. SCDL-Befehl ausführen
+    - name: SCDL ausführen
       run: |
-        echo "Running SCDL command:"
+        echo "SCDL-Befehl wird ausgeführt:"
         echo "${{ steps.prepare_scdl_command.outputs.scdl_command }}"
         eval "${{ steps.prepare_scdl_command.outputs.scdl_command }}"
 
-    # Commit and Push Changes using Git commands
-    - name: Commit and Push Changes
+    # 8. Commiten und pushen
+    - name: Lade änderung in repository
       run: |
         cd "${{ steps.define_paths.outputs.download_path }}"
-        
-        # Setup Git config
         git config user.name "${{ github.actor }}"
-        git config user.email "${{ github.actor }}@users.noreply.github.com"
-        
-        # Stage and commit the downloaded tracks
+        git config user.email "davenplay@gmail.com"
         git add .
         downloaded_tracks=$(ls -1)
         
         if [ -n "$downloaded_tracks" ]; then
-          commit_message="Added newly downloaded tracks to archive\n\n$(echo "$downloaded_tracks" | sed 's/^/- /')"
+          commit_message="Neue Tracks hinzugefügt:\n\n$(echo "$downloaded_tracks" | sed 's/^/- /')"
           git commit -m "$commit_message"
           git push
         else
-          echo "No new tracks to commit."
+          echo "Keine neuen Tracks zum Committen."
+        fi
 
-    # Upload Logs on Failure
-    - name: Upload Logs
+    # 9. Logs hochladen, falls Fehler auftritt
+    - name: Logs hochladen
       if: failure()
       uses: actions/upload-artifact@v3
       with:
