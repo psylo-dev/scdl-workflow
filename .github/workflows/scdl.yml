@@ -1,162 +1,160 @@
-name: SoundCloud Sync
+name: SCDL
 
 on:
   workflow_dispatch:
     inputs:
-      # Eingabefelder für benutzerdefinierte Parameter
-      sc_url:
-        description: 'SoundCloud Playlist oder Benutzer URL'
+      url:
+        description: 'SoundCloud URL (track/playlist/user)'
         required: true
         default: 'https://soundcloud.com/psylobrain/sets/psyauto'
-        
-      maxtracks:
-        description: 'Anzahl der letzten Tracks (0 für alle)'
+      download_all:
+        description: 'Download all tracks of a user (including reposts)'
         required: false
-        default: '10'
-        
-      download_archive:
-        description: 'Archiv-Datei für den Download-Verlauf'
+        default: 'false'
+      download_uploads:
+        description: 'Download all uploads of a user (no reposts)'
         required: false
-        default: 'scdl_downloads.txt'
-
-      download_path:
-        description: 'Pfad zum Speichern der Dateien'
+        default: 'false'
+      download_favorites:
+        description: 'Download all favorites (likes) of a user'
         required: false
-        default: 'songs'
-
-      # Checkboxen für zusätzliche Optionen
+        default: 'false'
+      download_playlists:
+        description: 'Download all playlists of a user'
+        required: false
+        default: 'false'
+      download_reposts:
+        description: 'Download all reposts of a user'
+        required: false
+        default: 'false'
+      continue_download:
+        description: 'Continue if a file already exists'
+        required: false
+        default: 'false'
       sync:
-        description: 'Nur neue/aktualisierte Tracks herunterladen (Synchronisation)'
+        description: 'Use sync function with an archive file'
         required: false
-        default: true
-        type: boolean
-
-      onlymp3:
-        description: 'Nur MP3-Dateien herunterladen'
+        default: 'true'
+      flac:
+        description: 'Convert original files to FLAC'
         required: false
-        default: true
-        type: boolean
-
-      max_size:
-        description: 'Maximale Trackgröße (z.B. 100m für 100 MB)'
+        default: 'false'
+      overwrite:
+        description: 'Overwrite existing files'
         required: false
-        default: '100m'
-
-      name_format:
-        description: 'Dateinamen-Format (Standard: Künstler - Titel)'
-        required: false
-        default: '%artist% - %title%'
-
-      force_metadata:
-        description: 'Metadaten auch bei bereits heruntergeladenen Dateien setzen'
-        required: false
-        default: false
-        type: boolean
-
-      add_timestamp:
-        description: 'Timestamp zum Dateinamen hinzufügen'
-        required: false
-        default: false
-        type: boolean
-
-      convert_flac:
-        description: 'FLAC-Dateien nach MP3 konvertieren'
-        required: false
-        default: false
-        type: boolean
+        default: 'false'
 
 jobs:
-  sync-songs:
+  download_and_commit:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Repository klonen
+    # Repository Checkout
     - name: Checkout Repository
       uses: actions/checkout@v3
 
-    # 2. Installiere Python, ffmpeg und scdl
-    - name: Install Dependencies (Python, ffmpeg, scdl)
+    # Install Python and Pip
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    # Install FFmpeg
+    - name: Install FFmpeg
       run: |
         sudo apt-get update
-        sudo apt-get install -y python3 python3-pip ffmpeg
-        pip install scdl
+        sudo apt-get install -y ffmpeg
 
-    # 3. Setze anpassbare Variablen für scdl-Optionen
-    - name: Set variables for scdl options
+    # Install SCDL
+    - name: Install SCDL
+      run: pip install git+https://github.com/scdl-org/scdl.git
+
+    # Define Paths
+    - name: Define Paths
+      id: define_paths
       run: |
-        export SC_URL="${{ github.event.inputs.sc_url }}"
-        export SC_MAXTRACKS="${{ github.event.inputs.maxtracks }}"
-        export SC_DOWNLOAD_ARCHIVE="${{ github.event.inputs.download_archive }}"
-        export SC_DOWNLOAD_PATH="${{ github.event.inputs.download_path }}"
-        export SC_ADDITIONAL_OPTIONS=""
-        
+        # Fixed paths
+        DOWNLOAD_PATH="./downloads"
+        SYNC_FILE="./sync/archive.txt"
+
+        # Ensure directories exist
+        mkdir -p "$DOWNLOAD_PATH"
+        mkdir -p "$(dirname "$SYNC_FILE")"
+
+        echo "::set-output name=download_path::$DOWNLOAD_PATH"
+        echo "::set-output name=sync_file::$SYNC_FILE"
+
+    # Prepare SCDL Command
+    - name: Prepare SCDL Command
+      id: prepare_scdl_command
+      run: |
+        scdl_command="scdl"
+
+        # Add the URL
+        if [[ -n "${{ github.event.inputs.url }}" ]]; then
+          scdl_command+=" -l '${{ github.event.inputs.url }}'"
+        fi
+
+        # Add options
+        if [[ "${{ github.event.inputs.download_all }}" == "true" ]]; then
+          scdl_command+=" -a"
+        fi
+        if [[ "${{ github.event.inputs.download_uploads }}" == "true" ]]; then
+          scdl_command+=" -t"
+        fi
+        if [[ "${{ github.event.inputs.download_favorites }}" == "true" ]]; then
+          scdl_command+=" -f"
+        fi
+        if [[ "${{ github.event.inputs.download_playlists }}" == "true" ]]; then
+          scdl_command+=" -p"
+        fi
+        if [[ "${{ github.event.inputs.download_reposts }}" == "true" ]]; then
+          scdl_command+=" -r"
+        fi
+        if [[ "${{ github.event.inputs.continue_download }}" == "true" ]]; then
+          scdl_command+=" -c"
+        fi
         if [[ "${{ github.event.inputs.sync }}" == "true" ]]; then
-          SC_ADDITIONAL_OPTIONS="$SC_ADDITIONAL_OPTIONS --sync"
+          scdl_command+=" --sync '${{ steps.define_paths.outputs.sync_file }}'"
         fi
-        
-        if [[ "${{ github.event.inputs.onlymp3 }}" == "true" ]]; then
-          SC_ADDITIONAL_OPTIONS="$SC_ADDITIONAL_OPTIONS --onlymp3"
+        if [[ "${{ github.event.inputs.flac }}" == "true" ]]; then
+          scdl_command+=" --flac"
         fi
-
-        if [[ -n "${{ github.event.inputs.max_size }}" ]]; then
-          SC_ADDITIONAL_OPTIONS="$SC_ADDITIONAL_OPTIONS --max-size ${{ github.event.inputs.max_size }}"
+        if [[ "${{ github.event.inputs.overwrite }}" == "true" ]]; then
+          scdl_command+=" --overwrite"
         fi
 
-        if [[ -n "${{ github.event.inputs.name_format }}" ]]; then
-          SC_ADDITIONAL_OPTIONS="$SC_ADDITIONAL_OPTIONS --name-format ${{ github.event.inputs.name_format }}"
-        fi
+        # Add fixed download path
+        scdl_command+=" --path '${{ steps.define_paths.outputs.download_path }}'"
 
-        if [[ "${{ github.event.inputs.force_metadata }}" == "true" ]]; then
-          SC_ADDITIONAL_OPTIONS="$SC_ADDITIONAL_OPTIONS --force-metadata"
-        fi
+        echo "::set-output name=scdl_command::$scdl_command"
 
-        if [[ "${{ github.event.inputs.add_timestamp }}" == "true" ]]; then
-          SC_ADDITIONAL_OPTIONS="$SC_ADDITIONAL_OPTIONS --addtimestamp"
-        fi
-
-        if [[ "${{ github.event.inputs.convert_flac }}" == "true" ]]; then
-          SC_ADDITIONAL_OPTIONS="$SC_ADDITIONAL_OPTIONS --flac"
-        fi
-
-    # 4. SoundCloud-Songs synchronisieren
-    - name: Sync Songs
+    # Run SCDL Command
+    - name: Run SCDL
       run: |
-        mkdir -p $SC_DOWNLOAD_PATH
-        scdl -l "$SC_URL" $SC_ADDITIONAL_OPTIONS
+        echo "Running SCDL command:"
+        echo "${{ steps.prepare_scdl_command.outputs.scdl_command }}"
+        eval "${{ steps.prepare_scdl_command.outputs.scdl_command }}"
 
-    # 5. Prüfen, ob Änderungen existieren
-    - name: Check for changes
-      run: |
-        if [ -z "$(git status --porcelain)" ]; then
-          echo "Keine neuen Songs. Beende Workflow."
-          exit 0
-        fi
-
-    # 6. Neue Lieder auflisten und in Nebenspeicher.txt speichern
-    - name: List new songs and save to file
-      run: |
-        NEW_FILES=$(git status --porcelain | grep "^A " | awk '{print $2}')
-        
-        if [ -z "$NEW_FILES" ]; then
-          echo "Keine neuen Songs zum Auflisten."
-          exit 0
-        fi
-
-        # Erstelle eine Liste der neuen Lieder
-        echo "Neue Lieder von SoundCloud:" > Nebenspeicher/neue_lieder.txt
-        echo "$NEW_FILES" | sed 's/^/- /' >> Nebenspeicher/neue_lieder.txt
-
-    # 7. Änderungen committen und pushen
+    # Add Downloaded Files to Repository
     - name: Commit and Push Changes
-      env:
-        GITHUB_TOKEN: ${{ secrets.TOKEN }}
       run: |
-        git config --global user.name "github-actions[bot]"
-        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        cd "${{ steps.define_paths.outputs.download_path }}"
+        git config user.name "${{ github.actor }}"
+        git config user.email "${{ github.actor }}@users.noreply.github.com"
+        git add .
+        downloaded_tracks=$(ls -1)
+        if [ -n "$downloaded_tracks" ]; then
+          commit_message="Added downloaded tracks:\n\n$(echo "$downloaded_tracks" | sed 's/^/- /')"
+          git commit -m "$commit_message"
+          git push
+        else
+          echo "No new tracks to commit."
 
-        # Commit-Message erstellen mit neuen Liedern
-        COMMIT_MESSAGE="Sync neue Lieder von SoundCloud:\n\n$(echo "$NEW_FILES" | sed 's/^/- /')"
-
-        git add songs/ Nebenspeicher/neue_lieder.txt
-        git commit -m "$COMMIT_MESSAGE"
-        git push origin HEAD:main
+    # Upload Logs on Failure
+    - name: Upload Logs
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: scdl-logs
+        path: ./logs/
