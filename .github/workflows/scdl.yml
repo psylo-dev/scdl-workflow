@@ -40,9 +40,11 @@ jobs:
         run: |
           pip install moviepy scdl
 
-      - name: FFMPEG installieren
+      # 3.1. FFmpeg installieren
+      - name: FFmpeg installieren
         run: |
-           apt-get install ffmpeg
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
       # 4. SCDL installieren
       - name: SCDL installieren
