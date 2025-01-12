@@ -85,25 +85,24 @@ jobs:
           echo "${{ env.scdl_command }}"
           eval "${{ env.scdl_command }}"
 
-      # 8. Audio zu Video mit MoviePy konvertieren (using convert.py)
-      - name: Audio zu Video konvertieren mit MoviePy
+      # 8. Audio zu Video mit FFmpeg konvertieren
+      - name: Audio zu Video konvertieren mit FFmpeg
         run: |
           IMAGE_URL="https://images3.alphacoders.com/857/857795.png"
           IMAGE_PATH="${GITHUB_WORKSPACE}/video_cover.png"
-          
+    
           # Lade das Coverbild herunter
           echo "Lade das Coverbild herunter..."
           curl -o "$IMAGE_PATH" "$IMAGE_URL"
-
+        
           # Verarbeite alle heruntergeladenen MP3-Dateien und konvertiere sie in Videos
           echo "Starte die Konvertierung der Audio-Dateien in Videos..."
           for audio_file in "${GITHUB_WORKSPACE}/downloads"/*.mp3; do
             [ -e "$audio_file" ] || continue
             base_name=$(basename "$audio_file" .mp3)
             echo "Konvertiere: $audio_file"
-
-            # Führe das convert.py Skript aus
-            python3 ${GITHUB_WORKSPACE}/convert.py "$audio_file" "$IMAGE_PATH" "${GITHUB_WORKSPACE}/downloads/converted/$base_name.mp4"
+            # Führe die FFmpeg-Konvertierung aus
+            ffmpeg -loop 1 -i "$IMAGE_PATH" -i "$audio_file" -c:v libx264 -c:a aac -b:a 192k -shortest "${GITHUB_WORKSPACE}/downloads/converted/$base_name.mp4"
           done
 
       # 9. `archive.txt`, heruntergeladene Tracks und konvertierte Videos aktualisieren und commiten
