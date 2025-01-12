@@ -40,6 +40,10 @@ jobs:
         run: |
           pip install moviepy scdl
 
+      - name: FFMPEG installieren
+        run: |
+           apt-get install ffmpeg
+
       # 4. SCDL installieren
       - name: SCDL installieren
         run: pip install git+https://github.com/scdl-org/scdl.git
