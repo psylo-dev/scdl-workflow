@@ -19,10 +19,6 @@ on:
         description: 'Erzwinge Metadaten auf bereits heruntergeladenen Tracks'
         required: false
         default: 'false'
-      custom_download_path:
-        description: 'Optional: Benutzerdefinierter Download-Pfad (Standard: repo workspace/downloads)'
-        required: false
-        default: ''
 
 jobs:
   download_and_commit:
