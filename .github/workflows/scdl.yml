@@ -36,19 +36,11 @@ jobs:
           python-version: '3.10'
 
       # 3. MoviePy und andere notwendige Pakete installieren
-      - name: MoviePy installieren
+      - name: MoviePy, SCDL, FFmpeg  installieren
         run: |
-          pip install moviepy scdl
-
-      # 3.1. FFmpeg installieren
-      - name: FFmpeg installieren
-        run: |
+          pip install moviepy git+https://github.com/scdl-org/scdl.git
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-
-      # 4. SCDL installieren
-      - name: SCDL installieren
-        run: pip install git+https://github.com/scdl-org/scdl.git
 
       # 5. Standardpfade festlegen
       - name: Standardpfade festlegen
@@ -105,13 +97,13 @@ jobs:
 
           # Verarbeite alle heruntergeladenen MP3-Dateien und konvertiere sie in Videos
           echo "Starte die Konvertierung der Audio-Dateien in Videos..."
-          for audio_file in "${{ env.download_path }}"/*.mp3; do
+          for audio_file in "${GITHUB_WORKSPACE}/downloads"/*.mp3; do
             [ -e "$audio_file" ] || continue
             base_name=$(basename "$audio_file" .mp3)
             echo "Konvertiere: $audio_file"
 
             # Führe das convert.py Skript aus
-            python3 convert.py "$audio_file" "$IMAGE_PATH" "${{ env.converted_path }}/$base_name.mp4"
+            python3 ${GITHUB_WORKSPACE}/convert.py "$audio_file" "$IMAGE_PATH" "${GITHUB_WORKSPACE}/downloads/converted/$base_name.mp4"
           done
 
       # 9. `archive.txt`, heruntergeladene Tracks und konvertierte Videos aktualisieren und commiten
