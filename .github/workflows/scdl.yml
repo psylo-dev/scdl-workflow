@@ -87,40 +87,25 @@ jobs:
           echo "${{ env.scdl_command }}"
           eval "${{ env.scdl_command }}"
 
-      # 8. Audio zu Video mit MoviePy konvertieren
+      # 8. Audio zu Video mit MoviePy konvertieren (using convert.py)
       - name: Audio zu Video konvertieren mit MoviePy
         run: |
           IMAGE_URL="https://images3.alphacoders.com/857/857795.png"
           IMAGE_PATH="${GITHUB_WORKSPACE}/video_cover.png"
           
+          # Lade das Coverbild herunter
+          echo "Lade das Coverbild herunter..."
           curl -o "$IMAGE_PATH" "$IMAGE_URL"
-          
+
+          # Verarbeite alle heruntergeladenen MP3-Dateien und konvertiere sie in Videos
+          echo "Starte die Konvertierung der Audio-Dateien in Videos..."
           for audio_file in "${{ env.download_path }}"/*.mp3; do
             [ -e "$audio_file" ] || continue
             base_name=$(basename "$audio_file" .mp3)
             echo "Konvertiere: $audio_file"
-            
-            python - <<EOF
-from moviepy.editor import AudioFileClip, ImageClip
-from moviepy.editor import concatenate_videoclips
 
-# Lade das Audio
-audio_clip = AudioFileClip("$audio_file")
-
-# Lade das Bild
-image_clip = ImageClip("$IMAGE_PATH")
-
-# Passe die Bildgröße an
-image_clip = image_clip.resize(height=720)
-image_clip = image_clip.set_duration(audio_clip.duration)  # Bild wird genauso lang wie der Track
-image_clip = image_clip.set_fps(24)  # 24 Bilder pro Sekunde
-
-# Füge Audio hinzu
-video_clip = image_clip.set_audio(audio_clip)
-
-# Speichere das Video
-video_clip.write_videofile("${{ env.converted_path }}/$base_name.mp4", codec="libx264", audio_codec="aac")
-EOF
+            # Führe das convert.py Skript aus
+            python3 convert.py "$audio_file" "$IMAGE_PATH" "${{ env.converted_path }}/$base_name.mp4"
           done
 
       # 9. `archive.txt`, heruntergeladene Tracks und konvertierte Videos aktualisieren und commiten
