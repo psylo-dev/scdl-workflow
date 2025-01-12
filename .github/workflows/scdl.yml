@@ -36,23 +36,28 @@ jobs:
           python-version: '3.10'
 
       # 3. MoviePy und andere notwendige Pakete installieren
-      - name: MoviePy, SCDL, FFmpeg  installieren
+      - name: MoviePy, SCDL, FFmpeg installieren
         run: |
-          pip install moviepy git+https://github.com/scdl-org/scdl.git
-          sudo apt-get update
+          sudo apt-get update -y
+          pip install git+https://github.com/scdl-org/scdl.git
           sudo apt-get install -y ffmpeg
+
+      # 4. Klone das ffmpeg-audio-to-video Repository
+      - name: Klone ffmpeg-audio-to-video Repository
+        run: |
+          git clone https://github.com/michaelck/ffmpeg-audio-to-video.git ${GITHUB_WORKSPACE}/ffmpeg-audio-to-video
+          mkdir ${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/input ${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/output
 
       # 5. Standardpfade festlegen
       - name: Standardpfade festlegen
         id: define_paths
         run: |
           SYNC_FILE="${GITHUB_WORKSPACE}/archive.txt"
-          DOWNLOAD_PATH="${GITHUB_WORKSPACE}/downloads"
-          CONVERTED_PATH="${GITHUB_WORKSPACE}/downloads/converted"
+          DOWNLOAD_PATH="${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/input"
+          CONVERTED_PATH="${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/output"
           
           mkdir -p "$DOWNLOAD_PATH"
           mkdir -p "$(dirname "$SYNC_FILE")"
-          mkdir -p "$CONVERTED_PATH"
           [ -f "$SYNC_FILE" ] || touch "$SYNC_FILE"
           echo "download_path=$DOWNLOAD_PATH" >> $GITHUB_ENV
           echo "converted_path=$CONVERTED_PATH" >> $GITHUB_ENV
@@ -85,27 +90,32 @@ jobs:
           echo "${{ env.scdl_command }}"
           eval "${{ env.scdl_command }}"
 
-      # 8. Audio zu Video mit FFmpeg konvertieren
-      - name: Audio zu Video konvertieren mit FFmpeg
+      # 8. Audio zu Video konvertieren mit create.sh
+      - name: Audio zu Video konvertieren mit create.sh
         run: |
           IMAGE_URL="https://images3.alphacoders.com/857/857795.png"
-          IMAGE_PATH="${GITHUB_WORKSPACE}/video_cover.png"
-    
+          IMAGE_PATH="${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/poster.jpg"
+          
           # Lade das Coverbild herunter
           echo "Lade das Coverbild herunter..."
           curl -o "$IMAGE_PATH" "$IMAGE_URL"
-        
-          # Verarbeite alle heruntergeladenen MP3-Dateien und konvertiere sie in Videos
-          echo "Starte die Konvertierung der Audio-Dateien in Videos..."
-          for audio_file in "${GITHUB_WORKSPACE}/downloads"/*.mp3; do
-            [ -e "$audio_file" ] || continue
-            base_name=$(basename "$audio_file" .mp3)
-            echo "Konvertiere: $audio_file"
-            # Führe die FFmpeg-Konvertierung aus
-            ffmpeg -loop 1 -i "$IMAGE_PATH" -i "$audio_file" -c:v libx264 -c:a aac -b:a 192k -shortest "${GITHUB_WORKSPACE}/downloads/converted/$base_name.mp4"
-          done
+          
+          # Füge die heruntergeladenen MP3-Dateien in den Input-Ordner ein
+          cp "${{ env.download_path }}/*.mp3" "${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/input/"
 
-      # 9. `archive.txt`, heruntergeladene Tracks und konvertierte Videos aktualisieren und commiten
+          # Führe das create.sh-Skript aus
+          echo "Starte die Konvertierung der Audio-Dateien in Videos mit create.sh..."
+          cd ${GITHUB_WORKSPACE}/ffmpeg-audio-to-video
+          chmod +x create.sh
+          ./create.sh
+
+      # 9. Konvertierte Videos in den definierten Pfad kopieren
+      - name: Konvertierte Videos kopieren
+        run: |
+          echo "Kopiere konvertierte Videos in den definierten Pfad..."
+          cp "${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/output/*" "${{ env.converted_path }}/"
+
+      # 10. `archive.txt`, heruntergeladene Tracks und konvertierte Videos aktualisieren und commiten
       - name: archive und Downloads aktualisieren und commiten
         run: |
           # Git-Konfiguration
@@ -120,3 +130,18 @@ jobs:
           # Änderungen committen und pushen
           git commit -m "Aktualisiere archive.txt, füge heruntergeladene Tracks und konvertierte Videos hinzu"
           git push
+
+       # 11. Vorherige GitHub Actions Runs löschen
+      - name: Vorherige GitHub Actions Runs löschen
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+        run: |
+          echo "Lösche vorherige GitHub Actions Runs..."
+          runs=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs?per_page=100" | \
+            jq -r '.workflow_runs[] | select(.status == "completed") | .id')
+          for run in $runs; do
+            echo "Lösche Run ID: $run"
+            curl -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/runs/$run"
+          done
