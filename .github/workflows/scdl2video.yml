@@ -7,10 +7,10 @@ on:
         description: 'SoundCloud URL (Track/Playlist/User)'
         required: true
         default: 'https://soundcloud.com/psylobrain/sets/psyauto'
-      stock_image:
-        description: 'Pfad zu einem Stock-Image (z. B. cover.jpg)'
+      stock_image_url:
+        description: 'URL zu einem Stock-Image (z. B. https://example.com/cover.jpg)'
         required: true
-        default: 'cover.jpg'
+        default: 'https://example.com/cover.jpg'
 
 jobs:
   download_and_convert:
@@ -37,14 +37,22 @@ jobs:
       - name: SCDL installieren
         run: pip install git+https://github.com/scdl-org/scdl.git
 
-      # 5. Standardpfade festlegen
+      # 5. Stock-Image herunterladen
+      - name: Stock-Image herunterladen
+        run: |
+          echo "Lade das Stock-Image von der angegebenen URL herunter..."
+          STOCK_IMAGE="${GITHUB_WORKSPACE}/stock_image.jpg"
+          curl -L -o "$STOCK_IMAGE" "${{ github.event.inputs.stock_image_url }}"
+          echo "Stock-Image heruntergeladen: $STOCK_IMAGE"
+          echo "stock_image=$STOCK_IMAGE" >> $GITHUB_ENV
+
+      # 6. Standardpfade festlegen
       - name: Standardpfade festlegen
         id: define_paths
         run: |
           SYNC_FILE="${GITHUB_WORKSPACE}/archive.txt"
           DOWNLOAD_PATH="${GITHUB_WORKSPACE}/downloads"
           VIDEO_OUTPUT_PATH="${GITHUB_WORKSPACE}/videos"
-          STOCK_IMAGE="${GITHUB_WORKSPACE}/${{ github.event.inputs.stock_image }}"
           
           # Ordner erstellen
           mkdir -p "$DOWNLOAD_PATH"
@@ -54,9 +62,8 @@ jobs:
           
           echo "download_path=$DOWNLOAD_PATH" >> $GITHUB_ENV
           echo "video_output_path=$VIDEO_OUTPUT_PATH" >> $GITHUB_ENV
-          echo "stock_image=$STOCK_IMAGE" >> $GITHUB_ENV
 
-      # 6. Tracks mit SCDL herunterladen
+      # 7. Tracks mit SCDL herunterladen
       - name: Tracks herunterladen
         run: |
           scdl_command="scdl -l '${{ github.event.inputs.url }}' --download-archive '${{ env.sync_file }}' --path '${{ env.download_path }}' --hide-progress"
@@ -64,7 +71,7 @@ jobs:
           echo "$scdl_command"
           eval "$scdl_command"
 
-      # 7. Tracks in Videos umwandeln
+      # 8. Tracks in Videos umwandeln
       - name: Tracks in Videos umwandeln
         run: |
           echo "Starte die Umwandlung von Tracks in Videos..."
@@ -74,14 +81,16 @@ jobs:
               video_name=$(basename "$track" .mp3).mp4
               video_path="${{ env.video_output_path }}/$video_name"
 
-              # FFmpeg-Befehl zur Erstellung des Videos
-              ffmpeg -loop 1 -i "${{ env.stock_image }}" -i "$track" -c:v libx264 -c:a aac -b:a 192k -shortest "$video_path"
+              # FFmpeg-Befehl zur Erstellung des Videos (1920x1080, 60fps)
+              ffmpeg -loop 1 -framerate 60 -i "${{ env.stock_image }}" -i "$track" \
+                -c:v libx264 -tune stillimage -pix_fmt yuv420p -vf "scale=1920:1080" \
+                -c:a aac -b:a 192k -shortest "$video_path"
 
               echo "Video erstellt: $video_path"
             fi
           done
 
-      # 8. Videos in das Repository übernehmen und commiten
+      # 9. Videos in das Repository übernehmen und commiten
       - name: Videos commiten
         run: |
           git config user.name "${{ github.actor }}"
