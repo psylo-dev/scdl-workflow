@@ -1,0 +1,146 @@
+name: 2SoundCloud Download & Sync Playlist (SCDL)
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'SoundCloud URL (Track/Playlist/User)'
+        required: true
+        default: 'https://soundcloud.com/psylobrain/sets/psyauto'
+      sync:
+        description: 'Verwende Sync-Funktion mit Archivdatei'
+        required: false
+        default: 'false'
+      overwrite:
+        description: 'Überschreibe existierende Dateien'
+        required: false
+        default: 'false'
+      metadata:
+        description: 'Erzwinge Metadaten auf bereits heruntergeladenen Tracks'
+        required: false
+        default: 'false'
+
+jobs:
+  download_and_commit:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Repository auschecken
+      - name: Repository auschecken
+        uses: actions/checkout@v3
+
+      # 2. Python einrichten
+      - name: Python einrichten
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      # 3. FFmpeg installieren
+      - name: FFmpeg installieren
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      # 4. SCDL installieren
+      - name: SCDL installieren
+        run: pip install git+https://github.com/scdl-org/scdl.git
+
+      # 5. Standardpfade festlegen
+      - name: Standardpfade festlegen
+        id: define_paths
+        run: |
+          SYNC_FILE="${GITHUB_WORKSPACE}/archive.txt"
+          DOWNLOAD_PATH="${GITHUB_WORKSPACE}/downloads"
+          CONVERTED_PATH="${GITHUB_WORKSPACE}/downloads/converted"
+          
+          mkdir -p "$DOWNLOAD_PATH"
+          mkdir -p "$(dirname "$SYNC_FILE")"
+          mkdir -p "$CONVERTED_PATH"
+          [ -f "$SYNC_FILE" ] || touch "$SYNC_FILE"
+          echo "download_path=$DOWNLOAD_PATH" >> $GITHUB_ENV
+          echo "converted_path=$CONVERTED_PATH" >> $GITHUB_ENV
+          echo "sync_file=$SYNC_FILE" >> $GITHUB_ENV
+
+      # 6. SCDL-Befehl vorbereiten
+      - name: SCDL-Befehl vorbereiten
+        id: prepare_scdl_command
+        run: |
+          scdl_command="scdl"
+          if [[ -n "${{ github.event.inputs.url }}" ]]; then
+            scdl_command+=" -l '${{ github.event.inputs.url }}'"
+          fi
+          if [[ "${{ github.event.inputs.sync }}" == "true" ]]; then
+            scdl_command+=" --sync '${{ env.sync_file }}'"
+          fi
+          if [[ "${{ github.event.inputs.metadata }}" == "true" ]]; then
+            scdl_command+=" --force-metadata"
+          fi
+          if [[ "${{ github.event.inputs.overwrite }}" == "true" ]]; then
+            scdl_command+=" --overwrite"
+          fi
+          scdl_command+=" --download-archive '${{ env.sync_file }}' --path '${{ env.download_path }}' --hide-progress"
+          echo "scdl_command=$scdl_command" >> $GITHUB_ENV
+
+      # 7. SCDL-Befehl ausführen
+      - name: SCDL ausführen
+        run: |
+          echo "SCDL-Befehl wird ausgeführt:"
+          echo "${{ env.scdl_command }}"
+          eval "${{ env.scdl_command }}"
+
+      # 8. Artefakt hochladen (Bild und Audiodateien)
+      - name: Artefakte hochladen (Bild und Audiodateien)
+        uses: actions/upload-artifact@v3
+        with:
+          name: soundcloud-content
+          path: |
+            ${{ env.download_path }}/*.mp3
+            ${{ github.workspace }}/cover.png
+
+  convert_and_commit:
+    needs: download_and_commit
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Artefakte herunterladen
+      - name: Artefakte herunterladen
+        uses: actions/download-artifact@v3
+        with:
+          name: soundcloud-content
+
+      # 2. FFmpeg installieren
+      - name: FFmpeg installieren
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      # 3. Audio zu Video konvertieren
+      - name: Audio zu Video konvertieren
+        run: |
+          IMAGE_PATH="${GITHUB_WORKSPACE}/cover.png" # Pfad zum Bild, das im Video verwendet werden soll
+          if [ ! -f "$IMAGE_PATH" ]; then
+            echo "Bilddatei nicht gefunden: $IMAGE_PATH"
+            exit 1
+          fi
+          for audio_file in "${GITHUB_WORKSPACE}/downloads"/*.mp3; do
+            [ -e "$audio_file" ] || continue
+            base_name=$(basename "$audio_file" .mp3)
+            echo "Konvertiere: $audio_file"
+            ffmpeg -loop 1 -framerate 2 -i "$IMAGE_PATH" -i "$audio_file" -c:v libx264 -c:a aac -b:a 192k -shortest "${GITHUB_WORKSPACE}/downloads/converted/$base_name.mp4"
+          done
+
+      # 4. `archive.txt`, heruntergeladene Tracks und konvertierte Videos aktualisieren und commiten
+      - name: archive und Downloads aktualisieren und commiten
+        run: |
+          # Git-Konfiguration
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
+
+          # Dateien und Ordner zum Commit hinzufügen
+          git add "${{ env.sync_file }}"
+          git add "${{ env.download_path }}/"
+          git add "${{ env.converted_path }}/"
+
+          # Änderungen committen und pushen
+          git commit -m "Aktualisiere archive.txt, füge heruntergeladene Tracks und konvertierte Videos hinzu"
+          git push
