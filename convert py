@@ -1,28 +1,25 @@
-from moviepy.editor import AudioFileClip, ImageClip
+from moviepy.editor import *  # Importiere MoviePy
+import sys
 
-def convert_audio_to_video(audio_file, image_path, output_file):
-    # Lade das Audio
-    audio_clip = AudioFileClip(audio_file)
+def convert_to_video(audio_file, image_file, output_file):
+    # Lade die Audiodatei und das Bild
+    audio = AudioFileClip(audio_file)
+    image = ImageClip(image_file, duration=audio.duration)  # Setze die Dauer des Bildes auf die Dauer der Audiodatei
+    image = image.set_fps(24)  # Setze die Bildrate
 
-    # Lade das Bild
-    image_clip = ImageClip(image_path)
+    # Kombiniere Bild und Audio
+    video = image.set_audio(audio)
 
-    # Passe die Bildgröße an
-    image_clip = image_clip.resize(height=720)
-    image_clip = image_clip.set_duration(audio_clip.duration)  # Bild wird genauso lang wie der Track
-    image_clip = image_clip.set_fps(24)  # 24 Bilder pro Sekunde
+    # Schreibe das Ergebnis als MP4-Datei
+    video.write_videofile(output_file, codec="libx264", audio_codec="aac")
 
-    # Füge Audio hinzu
-    video_clip = image_clip.set_audio(audio_clip)
-
-    # Speichere das Video
-    video_clip.write_videofile(output_file, codec="libx264", audio_codec="aac")
-
-# Beispielaufruf der Funktion
 if __name__ == "__main__":
-    import sys
+    if len(sys.argv) != 4:
+        print("Usage: python3 convert.py <audio_file> <image_file> <output_file>")
+        sys.exit(1)
+
     audio_file = sys.argv[1]
-    image_path = sys.argv[2]
+    image_file = sys.argv[2]
     output_file = sys.argv[3]
 
-    convert_audio_to_video(audio_file, image_path, output_file)
+    convert_to_video(audio_file, image_file, output_file)
