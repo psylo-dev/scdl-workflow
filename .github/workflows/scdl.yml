@@ -1,4 +1,4 @@
-name: SoundCloud Download & Sync (SCDL)
+name: SoundCloud Download & Sync Playlist (SCDL)
 
 on:
   workflow_dispatch:
@@ -7,22 +7,6 @@ on:
         description: 'SoundCloud URL (Track/Playlist/User)'
         required: true
         default: 'https://soundcloud.com/psylobrain/sets/psyauto'
-      download_uploads:
-        description: 'Lade alle Uploads eines Nutzers herunter (keine Reposts)'
-        required: false
-        default: 'false'
-      download_favorites:
-        description: 'Lade alle Favoriten (Likes) eines Nutzers herunter'
-        required: false
-        default: 'false'
-      download_playlists:
-        description: 'Lade alle Playlists eines Nutzers herunter'
-        required: false
-        default: 'false'
-      continue_download:
-        description: 'Setze fort, wenn eine Datei bereits existiert'
-        required: false
-        default: 'false'
       sync:
         description: 'Verwende Sync-Funktion mit Archivdatei'
         required: false
@@ -70,20 +54,14 @@ jobs:
         id: define_paths
         run: |
           SYNC_FILE="${GITHUB_WORKSPACE}/archive.txt"
-          # Wenn kein benutzerdefinierter Pfad angegeben ist, standardmäßig im "downloads"-Ordner des Repos
-          if [ -z "${{ github.event.inputs.custom_download_path }}" ]; then
-            DOWNLOAD_PATH="${GITHUB_WORKSPACE}/downloads"
-          else
-            # Wenn ein benutzerdefinierter Pfad angegeben wird, innerhalb des Downloads-Ordners
-            DOWNLOAD_PATH="${GITHUB_WORKSPACE}/downloads/${{ github.event.inputs.custom_download_path }}"
-          fi
-          # Sicherstellen, dass die Ordner existieren, sonst erstellen
+          DOWNLOAD_PATH="${GITHUB_WORKSPACE}/downloads"
+          
           mkdir -p "$DOWNLOAD_PATH"
           mkdir -p "$(dirname "$SYNC_FILE")"
           [ -f "$SYNC_FILE" ] || touch "$SYNC_FILE"
           echo "download_path=$DOWNLOAD_PATH" >> $GITHUB_ENV
           echo "sync_file=$SYNC_FILE" >> $GITHUB_ENV
-          
+
       # 6. SCDL-Befehl vorbereiten
       - name: SCDL-Befehl vorbereiten
         id: prepare_scdl_command
@@ -91,18 +69,6 @@ jobs:
           scdl_command="scdl"
           if [[ -n "${{ github.event.inputs.url }}" ]]; then
             scdl_command+=" -l '${{ github.event.inputs.url }}'"
-          fi
-          if [[ "${{ github.event.inputs.download_uploads }}" == "true" ]]; then
-            scdl_command+=" -t"
-          fi
-          if [[ "${{ github.event.inputs.download_favorites }}" == "true" ]]; then
-            scdl_command+=" -f"
-          fi
-          if [[ "${{ github.event.inputs.download_playlists }}" == "true" ]]; then
-            scdl_command+=" -p"
-          fi
-          if [[ "${{ github.event.inputs.continue_download }}" == "true" ]]; then
-            scdl_command+=" -c"
           fi
           if [[ "${{ github.event.inputs.sync }}" == "true" ]]; then
             scdl_command+=" --sync '${{ env.sync_file }}'"
@@ -123,12 +89,17 @@ jobs:
           echo "${{ env.scdl_command }}"
           eval "${{ env.scdl_command }}"
 
-      # 8. `archive.txt` aktualisieren und commiten
-      - name: archive aktualisieren und commiten
+      # 8. `archive.txt` und heruntergeladene Tracks aktualisieren und commiten
+      - name: archive und Downloads aktualisieren und commiten
         run: |
           # Git-Konfiguration
           git config user.name "${{ github.actor }}"
           git config user.email "${{ github.actor }}@users.noreply.github.com"
+
+          # Dateien und Ordner zum Commit hinzufügen
           git add "${{ env.sync_file }}"
-          git commit -m "Aktualisiere archive.txt mit neuen heruntergeladenen Tracks"
+          git add "${{ env.download_path }}/"
+
+          # Änderungen committen und pushen
+          git commit -m "Aktualisiere archive.txt und füge heruntergeladene Tracks hinzu"
           git push
