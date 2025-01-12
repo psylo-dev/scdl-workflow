@@ -10,7 +10,7 @@ on:
       stock_image_url:
         description: 'URL zu einem Stock-Image (z. B. https://example.com/cover.jpg)'
         required: true
-        default: 'https://example.com/cover.jpg'
+        default: 'https://images3.alphacoders.com/857/857795.png'
 
 jobs:
   download_and_convert:
