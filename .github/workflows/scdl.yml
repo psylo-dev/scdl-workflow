@@ -92,10 +92,15 @@ jobs:
       - name: Audio zu Video konvertieren
         run: |
           IMAGE_PATH="${GITHUB_WORKSPACE}/cover.png" # Pfad zum Bild, das im Video verwendet werden soll
+          if [ ! -f "$IMAGE_PATH" ]; then
+            echo "Bilddatei nicht gefunden: $IMAGE_PATH"
+            exit 1
+          fi
           for audio_file in "${{ env.download_path }}"/*.mp3; do
             [ -e "$audio_file" ] || continue
             base_name=$(basename "$audio_file" .mp3)
-            ffmpeg -loop 1 -i "$IMAGE_PATH" -i "$audio_file" -c:v libx264 -c:a aac -b:a 192k -shortest "${{ env.converted_path }}/$base_name.mp4"
+            echo "Konvertiere: $audio_file"
+            ffmpeg -loop 1 -framerate 2 -i "$IMAGE_PATH" -i "$audio_file" -c:v libx264 -c:a aac -b:a 192k -shortest "${{ env.converted_path }}/$base_name.mp4"
           done
 
       # 9. `archive.txt`, heruntergeladene Tracks und konvertierte Videos aktualisieren und commiten
