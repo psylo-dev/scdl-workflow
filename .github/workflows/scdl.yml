@@ -46,22 +46,15 @@ jobs:
       - name: Klone ffmpeg-audio-to-video Repository
         run: |
           git clone https://github.com/michaelck/ffmpeg-audio-to-video.git ${GITHUB_WORKSPACE}/ffmpeg-audio-to-video
-          mkdir ${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/input ${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/output
+          mkdir -p ${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/input ${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/output
 
       # 5. Standardpfade festlegen
       - name: Standardpfade festlegen
         id: define_paths
         run: |
-          SYNC_FILE="${GITHUB_WORKSPACE}/archive.txt"
-          DOWNLOAD_PATH="${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/input"
-          CONVERTED_PATH="${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/output"
-          
-          mkdir -p "$DOWNLOAD_PATH"
-          mkdir -p "$(dirname "$SYNC_FILE")"
-          [ -f "$SYNC_FILE" ] || touch "$SYNC_FILE"
-          echo "download_path=$DOWNLOAD_PATH" >> $GITHUB_ENV
-          echo "converted_path=$CONVERTED_PATH" >> $GITHUB_ENV
-          echo "sync_file=$SYNC_FILE" >> $GITHUB_ENV
+          echo "SYNC_FILE=${GITHUB_WORKSPACE}/archive.txt" >> $GITHUB_ENV
+          echo "DOWNLOAD_PATH=${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/input" >> $GITHUB_ENV
+          echo "CONVERTED_PATH=${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/output" >> $GITHUB_ENV
 
       # 6. SCDL-Befehl vorbereiten
       - name: SCDL-Befehl vorbereiten
@@ -72,7 +65,7 @@ jobs:
             scdl_command+=" -l '${{ github.event.inputs.url }}'"
           fi
           if [[ "${{ github.event.inputs.sync }}" == "true" ]]; then
-            scdl_command+=" --sync '${{ env.sync_file }}'"
+            scdl_command+=" --sync '${{ env.SYNC_FILE }}'"
           fi
           if [[ "${{ github.event.inputs.metadata }}" == "true" ]]; then
             scdl_command+=" --force-metadata"
@@ -80,42 +73,41 @@ jobs:
           if [[ "${{ github.event.inputs.overwrite }}" == "true" ]]; then
             scdl_command+=" --overwrite"
           fi
-          scdl_command+=" --download-archive '${{ env.sync_file }}' --path '${{ env.download_path }}' --hide-progress"
+          scdl_command+=" --download-archive '${{ env.SYNC_FILE }}' --path '${{ env.DOWNLOAD_PATH }}' --hide-progress"
           echo "scdl_command=$scdl_command" >> $GITHUB_ENV
 
-      # 7. SCDL-Befehl ausführen
-      - name: SCDL ausführen
+      # 7. SCDL-Befehl ausführen und Audio zu Video konvertieren
+      - name: SCDL ausführen und Audio zu Video konvertieren
         run: |
           echo "SCDL-Befehl wird ausgeführt:"
           echo "${{ env.scdl_command }}"
           eval "${{ env.scdl_command }}"
 
-      # 8. Audio zu Video konvertieren mit create.sh
-      - name: Audio zu Video konvertieren mit create.sh
-        run: |
-          IMAGE_URL="https://images3.alphacoders.com/857/857795.png"
-          IMAGE_PATH="${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/poster.jpg"
-          
-          # Lade das Coverbild herunter
-          echo "Lade das Coverbild herunter..."
-          curl -o "$IMAGE_PATH" "$IMAGE_URL"
-          
-          # Füge die heruntergeladenen MP3-Dateien in den Input-Ordner ein
-          cp "${{ env.download_path }}/*.mp3" "${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/input/"
+          # Überprüfen, ob MP3-Dateien heruntergeladen wurden
+          if compgen -G "${{ env.DOWNLOAD_PATH }}/*.mp3" > /dev/null; then
+            # Lade das Coverbild herunter
+            IMAGE_URL="https://images3.alphacoders.com/857/857795.png"
+            IMAGE_PATH="${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/poster.jpg"
+            echo "Lade das Coverbild herunter..."
+            curl -o "$IMAGE_PATH" "$IMAGE_URL"
 
-          # Führe das create.sh-Skript aus
-          echo "Starte die Konvertierung der Audio-Dateien in Videos mit create.sh..."
-          cd ${GITHUB_WORKSPACE}/ffmpeg-audio-to-video
-          chmod +x create.sh
-          ./create.sh
+            # Füge die heruntergeladenen MP3-Dateien in den Input-Ordner ein
+            cp "${{ env.DOWNLOAD_PATH }}/*" "${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/input/"
 
-      # 9. Konvertierte Videos in den definierten Pfad kopieren
-      - name: Konvertierte Videos kopieren
-        run: |
-          echo "Kopiere konvertierte Videos in den definierten Pfad..."
-          cp "${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/output/*" "${{ env.converted_path }}/"
+            # Führe das create.sh-Skript aus
+            echo "Starte die Konvertierung der Audio-Dateien in Videos mit create.sh..."
+            cd ${GITHUB_WORKSPACE}/ffmpeg-audio-to-video
+            chmod +x create.sh
+            ./create.sh
 
-      # 10. `archive.txt`, heruntergeladene Tracks und konvertierte Videos aktualisieren und commiten
+            # Konvertierte Videos in den definierten Pfad kopieren
+            echo "Kopiere konvertierte Videos in den definierten Pfad..."
+            cp "${GITHUB_WORKSPACE}/ffmpeg-audio-to-video/output/*" "${{ env.CONVERTED_PATH }}/"
+          else
+            echo "Keine MP3-Dateien zum Kopieren gefunden."
+          fi
+
+      # 8. `archive.txt`, heruntergeladene Tracks und konvertierte Videos aktualisieren und commiten
       - name: archive und Downloads aktualisieren und commiten
         run: |
           # Git-Konfiguration
@@ -123,15 +115,15 @@ jobs:
           git config user.email "${{ github.actor }}@users.noreply.github.com"
 
           # Dateien und Ordner zum Commit hinzufügen
-          git add "${{ env.sync_file }}"
-          git add "${{ env.download_path }}/"
-          git add "${{ env.converted_path }}/"
+          git add "${{ env.SYNC_FILE }}"
+          git add "${{ env.DOWNLOAD_PATH }}/"
+          git add "${{ env.CONVERTED_PATH }}/"
 
           # Änderungen committen und pushen
           git commit -m "Aktualisiere archive.txt, füge heruntergeladene Tracks und konvertierte Videos hinzu"
           git push
 
-       # 11. Vorherige GitHub Actions Runs löschen
+      # 9. Vorherige GitHub Actions Runs löschen
       - name: Vorherige GitHub Actions Runs löschen
         env:
           GITHUB_TOKEN: ${{ secrets.TOKEN }}
