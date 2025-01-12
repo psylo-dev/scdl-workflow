@@ -51,11 +51,14 @@ jobs:
         run: |
           SYNC_FILE="${GITHUB_WORKSPACE}/archive.txt"
           DOWNLOAD_PATH="${GITHUB_WORKSPACE}/downloads"
+          CONVERTED_PATH="${GITHUB_WORKSPACE}/downloads/converted"
           
           mkdir -p "$DOWNLOAD_PATH"
           mkdir -p "$(dirname "$SYNC_FILE")"
+          mkdir -p "$CONVERTED_PATH"
           [ -f "$SYNC_FILE" ] || touch "$SYNC_FILE"
           echo "download_path=$DOWNLOAD_PATH" >> $GITHUB_ENV
+          echo "converted_path=$CONVERTED_PATH" >> $GITHUB_ENV
           echo "sync_file=$SYNC_FILE" >> $GITHUB_ENV
 
       # 6. SCDL-Befehl vorbereiten
@@ -85,7 +88,17 @@ jobs:
           echo "${{ env.scdl_command }}"
           eval "${{ env.scdl_command }}"
 
-      # 8. `archive.txt` und heruntergeladene Tracks aktualisieren und commiten
+      # 8. Audio zu Video konvertieren
+      - name: Audio zu Video konvertieren
+        run: |
+          IMAGE_PATH="${GITHUB_WORKSPACE}/cover.png" # Pfad zum Bild, das im Video verwendet werden soll
+          for audio_file in "${{ env.download_path }}"/*.mp3; do
+            [ -e "$audio_file" ] || continue
+            base_name=$(basename "$audio_file" .mp3)
+            ffmpeg -loop 1 -i "$IMAGE_PATH" -i "$audio_file" -c:v libx264 -c:a aac -b:a 192k -shortest "${{ env.converted_path }}/$base_name.mp4"
+          done
+
+      # 9. `archive.txt`, heruntergeladene Tracks und konvertierte Videos aktualisieren und commiten
       - name: archive und Downloads aktualisieren und commiten
         run: |
           # Git-Konfiguration
@@ -95,7 +108,8 @@ jobs:
           # Dateien und Ordner zum Commit hinzufügen
           git add "${{ env.sync_file }}"
           git add "${{ env.download_path }}/"
+          git add "${{ env.converted_path }}/"
 
           # Änderungen committen und pushen
-          git commit -m "Aktualisiere archive.txt und füge heruntergeladene Tracks hinzu"
+          git commit -m "Aktualisiere archive.txt, füge heruntergeladene Tracks und konvertierte Videos hinzu"
           git push
