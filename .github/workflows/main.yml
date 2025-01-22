@@ -1,0 +1,63 @@
+name: sc2yt - sync
+
+on:
+  workflow_dispatch: # Nur manuell ausführbar
+
+jobs:
+  download_and_push:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Checkout des Repositories
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    # Installiere ffmpeg
+    - name: Install ffmpeg
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
+
+    # Installiere Python3, pip und scdl
+    - name: Install FFmpeg, Python3, pip, and scdl
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg python3 python3-pip
+        pip3 install --upgrade pip
+        pip3 install scdl
+
+    # Stelle sicher, dass das Arbeitsverzeichnis existiert
+    - name: Create PSYAuto directory
+      run: mkdir -p ${GITHUB_WORKSPACE}/PSYAuto/
+
+    # SoundCloud-Set herunterladen
+    - name: Download SoundCloud Set
+      run: |
+        if [ -f "${GITHUB_WORKSPACE}/archive.txt" ]; then
+          scdl -l https://soundcloud.com/psylobrain/sets/psyauto \
+               --path ${GITHUB_WORKSPACE}/PSYAuto/ \
+               --hidewarnings \
+               --force-metadata \
+               --sync archive.txt
+        else
+          scdl -l https://soundcloud.com/psylobrain/sets/psyauto \
+               --hidewarnings \
+               --force-metadata \
+               --download-archive ${GITHUB_WORKSPACE}/archive.txt
+        fi
+
+    # Git Änderungen hinzufügen, committen und pushen
+    - name: Commit and Push Changes
+      run: |
+        cd $GITHUB_WORKSPACE/PSYAuto/
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add .
+        if git diff-index --quiet HEAD; then
+          echo "No changes to commit"
+        else
+          git commit -m "Updated sync PSYAuto"
+          git push
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.TOKEN }}
