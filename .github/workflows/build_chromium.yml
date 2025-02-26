@@ -20,12 +20,14 @@ jobs:
 
       - name: Set up depot_tools
         run: |
-          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git ~/depot_tools
-          echo "export PATH=$HOME/depot_tools:$PATH" >> $GITHUB_ENV
-          source $GITHUB_ENV
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git ~/depot_tools
+          echo "export PATH=$HOME/depot_tools:$PATH" >> ~/.bashrc
+          echo "export PATH=$HOME/depot_tools:$PATH" >> ~/.profile
+          source ~/.bashrc
 
       - name: Fetch Chromium Source
         run: |
+          export PATH=$HOME/depot_tools:$PATH
           mkdir -p ~/chromium && cd ~/chromium
           fetch --nohooks android
           gclient sync --nohooks --with_branch_heads --with_tags
@@ -50,11 +52,10 @@ jobs:
       - name: Build Chromium
         run: |
           cd ~/chromium/src
-          ninja -C out/Default chrome_public_apk
+          autoninja -C out/Default chrome_public_apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ungoogled-chromium-android
           path: ~/chromium/src/out/Default/apks/ChromePublic.apk
-          
