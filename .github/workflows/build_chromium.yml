@@ -1,0 +1,60 @@
+name: Build Ungoogled Chromium for Android
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y git python3 clang lld build-essential curl unzip
+
+      - name: Set up depot_tools
+        run: |
+          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git ~/depot_tools
+          echo "export PATH=$HOME/depot_tools:$PATH" >> $GITHUB_ENV
+          source $GITHUB_ENV
+
+      - name: Fetch Chromium Source
+        run: |
+          mkdir -p ~/chromium && cd ~/chromium
+          fetch --nohooks android
+          gclient sync --nohooks --with_branch_heads --with_tags
+
+      - name: Apply Ungoogled Chromium patches
+        run: |
+          cd ~/chromium/src
+          git clone https://github.com/ungoogled-software/ungoogled-chromium-android.git patches
+          python3 patches/utils.py apply_patches . patches/patches
+
+      - name: Run Chromium hooks
+        run: |
+          cd ~/chromium/src
+          ./build/install-build-deps-android.sh --no-prompt
+          gclient runhooks
+
+      - name: Configure GN build
+        run: |
+          cd ~/chromium/src
+          gn gen out/Default --args='target_os="android" target_cpu="arm64" is_component_build=false is_debug=false symbol_level=0 use_jumbo_build=true enable_resource_allowlist_generation=false'
+
+      - name: Build Chromium
+        run: |
+          cd ~/chromium/src
+          ninja -C out/Default chrome_public_apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ungoogled-chromium-android
+          path: ~/chromium/src/out/Default/apks/ChromePublic.apk
+          
